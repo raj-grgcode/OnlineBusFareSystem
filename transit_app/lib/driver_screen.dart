@@ -67,7 +67,7 @@ class DriverScreen extends StatefulWidget {
 }
 
 class _DriverScreenState extends State<DriverScreen> {
-  static const String _wsUrl = 'ws://192.168.18.156:8000/ws/driver';
+  static const String _wsUrl = 'wss://busam.onrender.com/ws/driver';
 
   WebSocketChannel? _channel;
   Timer?

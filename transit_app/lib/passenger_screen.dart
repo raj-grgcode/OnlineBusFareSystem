@@ -97,8 +97,8 @@ class PassengerScreen extends StatefulWidget {
 
 //7.State is a built in flutter class (setState,initState,dispose)tools
 class _PassengerScreenState extends State<PassengerScreen> {
+  static const String _wsUrl = 'wss://busam.onrender.com/ws/passenger';
   //ws protocol contains my wifi ip address at passenger end
-  static const String _wsUrl = 'ws://192.168.18.156:8000/ws/passenger';
 
   //Websocket latlng are data type
   WebSocketChannel? _channel; //variable will hold websocket channel object
@@ -404,7 +404,8 @@ class _PassengerScreenState extends State<PassengerScreen> {
             bottom: 0,
             left: 0,
             right: 0,
-            child: SafeArea(// to avoid hardware obstruction
+            child: SafeArea(
+              // to avoid hardware obstruction
               top: false,
               child: Container(
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -451,8 +452,10 @@ class _PassengerScreenState extends State<PassengerScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           //icon 18 px sizedbox 8 pix expanded grows to fill whatever horizontal space is left in the row
-                          child: Autocomplete<String>( //build in widget that handles 'type text,see filtered suggestion dropdown,pick me' pattern
-                            optionsBuilder: (TextEditingValue value) {//For recommendation  If B is typed Balaju is recommended
+                          child: Autocomplete<String>(
+                            //build in widget that handles 'type text,see filtered suggestion dropdown,pick me' pattern
+                            optionsBuilder: (TextEditingValue value) {
+                              //For recommendation  If B is typed Balaju is recommended
                               if (value.text.isEmpty)
                                 return const Iterable<String>.empty();
                               return stops.where(
@@ -462,23 +465,27 @@ class _PassengerScreenState extends State<PassengerScreen> {
                               );
                             },
                             //Runs when passenger taps one of the suggestion
-                            onSelected: (String selection) => //selection -> whichever location he tapped saves in into fromstop variable set via setState
-                                setState(() => _fromStop = selection),
-                            
+                            onSelected:
+                                (
+                                  String selection,
+                                ) => //selection -> whichever location he tapped saves in into fromstop variable set via setState
+                                    setState(() => _fromStop = selection),
+
                             //what the txt box looks like (only the top box the actual texfield ram types into the location)
-                            fieldViewBuilder:
-                                (context, controller, focusNode, onSubmit) {
-                                  return TextField(
-                                    controller: controller,//A TextEditingController object, created and owned by Autocomplete itself — not by you 
-                                    //Its job: hold the actual text currently typed, and let you read/change it programmatically
-                                    focusNode: focusNode,// A FocusNode object — tracks whether this particular text field is currently focused 
-                                    //Needed because Autocomplete needs to know "is the user actively typing in THIS box" to decide when to show/hide the suggestions dropdown
-                                    decoration: const InputDecoration(
-                                      hintText: 'From',
-                                      border: InputBorder.none,
-                                    ),
-                                  );
-                                },
+                            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                              return TextField(
+                                controller:
+                                    controller, //A TextEditingController object, created and owned by Autocomplete itself — not by you
+                                //Its job: hold the actual text currently typed, and let you read/change it programmatically
+                                focusNode:
+                                    focusNode, // A FocusNode object — tracks whether this particular text field is currently focused
+                                //Needed because Autocomplete needs to know "is the user actively typing in THIS box" to decide when to show/hide the suggestions dropdown
+                                decoration: const InputDecoration(
+                                  hintText: 'From',
+                                  border: InputBorder.none,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
