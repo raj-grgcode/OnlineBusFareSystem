@@ -20,7 +20,7 @@ class _LoadMoneyScreenState extends State<LoadMoneyScreen> {
     if (amount.isEmpty) return;
 
     final url =
-        '$_backendUrl/pay/initiate?amount=$amount&device_id=${widget.deviceId}';
+        '$_backendUrl/pay/mock/initiate?amount=$amount&device_id=${widget.deviceId}';
 
     _webViewController = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -50,7 +50,10 @@ class _LoadMoneyScreenState extends State<LoadMoneyScreen> {
         padding: const EdgeInsets.all(24),
         child: Column(
           children: [
-            const Text('Enter amount to load (NPR)', style: TextStyle(fontSize: 16)),
+            const Text(
+              'Enter amount to load (NPR)',
+              style: TextStyle(fontSize: 16),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _amountController,
@@ -69,8 +72,10 @@ class _LoadMoneyScreenState extends State<LoadMoneyScreen> {
                   backgroundColor: Colors.green,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                 ),
-                child: const Text('Pay with eSewa',
-                    style: TextStyle(fontSize: 16, color: Colors.white)),
+                child: const Text(
+                  'Pay with eSewa',
+                  style: TextStyle(fontSize: 16, color: Colors.white),
+                ),
               ),
             ),
             const SizedBox(height: 12),
