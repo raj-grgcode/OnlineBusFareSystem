@@ -1,4 +1,5 @@
 //1.Import part
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -6,6 +7,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'qr_scan_screen.dart';
+import 'device_id.dart';
+import 'load_money_screen.dart';
 
 //2. class for the Busroute validation
 class BusRoute {
@@ -97,8 +101,8 @@ class PassengerScreen extends StatefulWidget {
 
 //7.State is a built in flutter class (setState,initState,dispose)tools
 class _PassengerScreenState extends State<PassengerScreen> {
-  //ws protocol contains my wifi ip address at passenger end
-  static const String _wsUrl = 'ws://192.168.18.156:8000/ws/passenger';
+  //ws protocol now points to the deployed Render backend
+  static const String _wsUrl = 'wss://busam.onrender.com/ws/passenger';
 
   //Websocket latlng are data type
   WebSocketChannel? _channel; //variable will hold websocket channel object
@@ -123,12 +127,24 @@ class _PassengerScreenState extends State<PassengerScreen> {
   String? _toStop;
   List<BusRoute>? _searchResults;
 
+  // device_id used to identify this passenger for QR scan / wallet
+  String? _deviceId;
+
   //8.runs once
   @override
   void initState() {
     super.initState(); //Internal setup
     _connect(); //start opening websocket connection to backend
     _startTrackingMyLocation(); //checking and asking location of passenger permission
+    _loadDeviceId(); //load or create this phone's persistent device id
+  }
+
+  // Loads the saved device_id from shared_preferences, or creates
+  // a new one on first launch. Used to identify this passenger's
+  // wallet/trips on the backend (no login system yet).
+  Future<void> _loadDeviceId() async {
+    final id = await getOrCreateDeviceId();
+    if (mounted) setState(() => _deviceId = id);
   }
 
   //9. Connecting flutter to websocket
@@ -399,12 +415,37 @@ class _PassengerScreenState extends State<PassengerScreen> {
             ),
           ),
 
+          //2b. QR Scan floating button (board/exit scan)
+          Positioned(
+            bottom: 230,
+            right: 12,
+            child: SafeArea(
+              child: FloatingActionButton(
+                heroTag: 'qr_scan_btn',
+                backgroundColor: Colors.green,
+                onPressed: _deviceId == null
+                    ? null // disabled until device id finishes loading
+                    : () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                QrScanScreen(deviceId: _deviceId!),
+                          ),
+                        );
+                      },
+                child: const Icon(Icons.qr_code_scanner),
+              ),
+            ),
+          ),
+
           //3. search box
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: SafeArea(// to avoid hardware obstruction
+            child: SafeArea(
+              // to avoid hardware obstruction
               top: false,
               child: Container(
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -451,8 +492,10 @@ class _PassengerScreenState extends State<PassengerScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           //icon 18 px sizedbox 8 pix expanded grows to fill whatever horizontal space is left in the row
-                          child: Autocomplete<String>( //build in widget that handles 'type text,see filtered suggestion dropdown,pick me' pattern
-                            optionsBuilder: (TextEditingValue value) {//For recommendation  If B is typed Balaju is recommended
+                          child: Autocomplete<String>(
+                            //build in widget that handles 'type text,see filtered suggestion dropdown,pick me' pattern
+                            optionsBuilder: (TextEditingValue value) {
+                              //For recommendation  If B is typed Balaju is recommended
                               if (value.text.isEmpty)
                                 return const Iterable<String>.empty();
                               return stops.where(
@@ -462,23 +505,27 @@ class _PassengerScreenState extends State<PassengerScreen> {
                               );
                             },
                             //Runs when passenger taps one of the suggestion
-                            onSelected: (String selection) => //selection -> whichever location he tapped saves in into fromstop variable set via setState
-                                setState(() => _fromStop = selection),
-                            
+                            onSelected:
+                                (
+                                  String selection,
+                                ) => //selection -> whichever location he tapped saves in into fromstop variable set via setState
+                                    setState(() => _fromStop = selection),
+
                             //what the txt box looks like (only the top box the actual texfield ram types into the location)
-                            fieldViewBuilder:
-                                (context, controller, focusNode, onSubmit) {
-                                  return TextField(
-                                    controller: controller,//A TextEditingController object, created and owned by Autocomplete itself — not by you 
-                                    //Its job: hold the actual text currently typed, and let you read/change it programmatically
-                                    focusNode: focusNode,// A FocusNode object — tracks whether this particular text field is currently focused 
-                                    //Needed because Autocomplete needs to know "is the user actively typing in THIS box" to decide when to show/hide the suggestions dropdown
-                                    decoration: const InputDecoration(
-                                      hintText: 'From',
-                                      border: InputBorder.none,
-                                    ),
-                                  );
-                                },
+                            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                              return TextField(
+                                controller:
+                                    controller, //A TextEditingController object, created and owned by Autocomplete itself — not by you
+                                //Its job: hold the actual text currently typed, and let you read/change it programmatically
+                                focusNode:
+                                    focusNode, // A FocusNode object — tracks whether this particular text field is currently focused
+                                //Needed because Autocomplete needs to know "is the user actively typing in THIS box" to decide when to show/hide the suggestions dropdown
+                                decoration: const InputDecoration(
+                                  hintText: 'From',
+                                  border: InputBorder.none,
+                                ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -538,7 +585,14 @@ class _PassengerScreenState extends State<PassengerScreen> {
         unselectedItemColor: Colors.grey,
         onTap: (index) {
           setState(() => _navIndex = index);
-          if (index != 0) {
+          if (index == 1 && _deviceId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => LoadMoneyScreen(deviceId: _deviceId!),
+              ),
+            );
+          } else if (index != 0) {
             final labels = ['Home', 'Load Money', 'Pass', 'History', 'Profile'];
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('${labels[index]} - coming soon')),

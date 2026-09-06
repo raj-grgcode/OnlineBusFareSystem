@@ -9,10 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  geolocator: ^13.0.1
+  geolocator: ^13.0.4
   web_socket_channel: ^3.0.1
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
+  mobile_scanner: ^5.2.3
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  uuid: ^4.3.3
 
 dev_dependencies:
   flutter_test:
@@ -20,3 +24,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+webview_flutter: ^4.4.2
