@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form
 from fastapi.responses import HTMLResponse
 import json
 import math
@@ -194,7 +194,7 @@ async def load_wallet(req: LoadMoneyRequest):
     return {"balance": wallets[req.device_id]}
 
 
-# ---- eSewa payment integration (UAT/sandbox — safe for testing) ----
+# ---- eSewa payment integration (UAT/sandbox — kept for reference, not currently used) ----
 
 ESEWA_SECRET_KEY = "8gBm/:&EnhH.1/q"
 ESEWA_PRODUCT_CODE = "EPAYTEST"
@@ -293,3 +293,37 @@ async def payment_success(data: str):
 @app.get("/pay/failure")
 async def payment_failure():
     return HTMLResponse("<h2>Payment failed or cancelled.</h2>")
+
+
+# ---- Mock payment simulator (reliable stand-in for the demo) ----
+# Simulates a real payment gateway flow (WebView -> confirm -> wallet credited)
+# without depending on third-party sandbox infrastructure.
+
+@app.get("/pay/mock/initiate")
+async def mock_pay_initiate(amount: float, device_id: str):
+    html = f"""
+    <html>
+    <body style="font-family: sans-serif; text-align: center; padding: 40px;">
+      <h2>Mock Payment Gateway</h2>
+      <p>Amount: NPR {amount}</p>
+      <p>This simulates a real payment confirmation screen.</p>
+      <form action="/pay/mock/confirm" method="POST">
+        <input type="hidden" name="device_id" value="{device_id}">
+        <input type="hidden" name="amount" value="{amount}">
+        <button type="submit" style="padding: 12px 24px; font-size: 16px; background: green; color: white; border: none; border-radius: 8px;">
+          Confirm Payment
+        </button>
+      </form>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+
+@app.post("/pay/mock/confirm")
+async def mock_pay_confirm(device_id: str = Form(...), amount: float = Form(...)):
+    wallets[device_id] = wallets.get(device_id, 0.0) + amount
+    return HTMLResponse(
+        f"<h2>Payment successful! NPR {amount} added.</h2>"
+        f"<p>New balance: NPR {wallets[device_id]}</p>"
+    )
