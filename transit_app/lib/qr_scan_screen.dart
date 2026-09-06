@@ -13,7 +13,7 @@ class QrScanScreen extends StatefulWidget {
 }
 
 class _QrScanScreenState extends State<QrScanScreen> {
-  static const String _backendUrl = 'http://192.168.18.156:8000';
+  static const String _backendUrl = 'https://busam.onrender.com';
 
   bool _processing = false;
   bool _scanCompleted = false; // NEW: locks out further scans once one succeeds
@@ -25,7 +25,8 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
     setState(() {
       _processing = true;
-      _scanCompleted = true; // lock immediately, before the async call even starts
+      _scanCompleted =
+          true; // lock immediately, before the async call even starts
     });
 
     try {
@@ -68,8 +69,11 @@ class _QrScanScreenState extends State<QrScanScreen> {
                 ? Container(
                     color: Colors.black,
                     child: const Center(
-                      child: Icon(Icons.check_circle,
-                          color: Colors.green, size: 64),
+                      child: Icon(
+                        Icons.check_circle,
+                        color: Colors.green,
+                        size: 64,
+                      ),
                     ),
                   )
                 : MobileScanner(
@@ -95,8 +99,7 @@ class _QrScanScreenState extends State<QrScanScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            _resultMessage ??
-                                'Point camera at the bus QR code',
+                            _resultMessage ?? 'Point camera at the bus QR code',
                             textAlign: TextAlign.center,
                             style: const TextStyle(fontSize: 16),
                           ),
