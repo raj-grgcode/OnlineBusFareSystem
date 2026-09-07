@@ -202,21 +202,22 @@ class _PassengerScreenState extends State<PassengerScreen> {
 
     if (permission == LocationPermission.deniedForever) return;
 
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen((Position position) {
-      if (!mounted) return;
-      final newLocation = LatLng(position.latitude, position.longitude);
-      setState(() => _myLocation = newLocation);
+    _positionSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 5,
+          ),
+        ).listen((Position position) {
+          if (!mounted) return;
+          final newLocation = LatLng(position.latitude, position.longitude);
+          setState(() => _myLocation = newLocation);
 
-      if (!_hasCenteredOnMe && _busLocation == null) {
-        _hasCenteredOnMe = true;
-        _mapController.move(newLocation, 16);
-      }
-    });
+          if (!_hasCenteredOnMe && _busLocation == null) {
+            _hasCenteredOnMe = true;
+            _mapController.move(newLocation, 16);
+          }
+        });
   }
 
   void _runSearch() {
@@ -252,14 +253,10 @@ class _PassengerScreenState extends State<PassengerScreen> {
         children: [
           FlutterMap(
             mapController: _mapController,
-            options: MapOptions(
-              initialCenter: center,
-              initialZoom: 14,
-            ),
+            options: MapOptions(initialCenter: center, initialZoom: 14),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.transit_app',
               ),
               MarkerLayer(
@@ -465,16 +462,17 @@ class _PassengerScreenState extends State<PassengerScreen> {
                             },
                             onSelected: (String selection) =>
                                 setState(() => _fromStop = selection),
-                            fieldViewBuilder: (context, controller, focusNode, onSubmit) {
-                              return TextField(
-                                controller: controller,
-                                focusNode: focusNode,
-                                decoration: const InputDecoration(
-                                  hintText: 'From',
-                                  border: InputBorder.none,
-                                ),
-                              );
-                            },
+                            fieldViewBuilder:
+                                (context, controller, focusNode, onSubmit) {
+                                  return TextField(
+                                    controller: controller,
+                                    focusNode: focusNode,
+                                    decoration: const InputDecoration(
+                                      hintText: 'From',
+                                      border: InputBorder.none,
+                                    ),
+                                  );
+                                },
                           ),
                         ),
                       ],
@@ -550,7 +548,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
               ),
             );
           } else if (index != 0) {
-            final labels = ['Home', 'Load Money', 'Pass', 'History', 'Profile'];
+            final labels = ['Home', 'Load Money', 'Pass', 'Profile'];
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('${labels[index]} - coming soon')),
             );
@@ -566,7 +564,6 @@ class _PassengerScreenState extends State<PassengerScreen> {
             icon: Icon(Icons.confirmation_number),
             label: 'Pass',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'History'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
