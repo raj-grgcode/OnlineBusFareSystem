@@ -7,9 +7,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:http/http.dart' as http;
 import 'qr_scan_screen.dart';
 import 'device_id.dart';
 import 'load_money_screen.dart';
+import 'pass_company_screen.dart';
 
 //2. class for the Busroute validation
 class BusRoute {
@@ -62,8 +64,6 @@ final List<BusRoute> allRoutes = [
 ];
 
 //4. allStopNames function which contains only List of string
-//Goal is to collect every unique stop name from all routes
-//add to Sets
 List<String> allStopNames() {
   final set = <String>{};
   for (final r in allRoutes) {
@@ -73,25 +73,19 @@ List<String> allStopNames() {
 }
 
 //5.To search starting and ending point of trip and see if its available or not
-//allRoutes.where().toList()
 List<BusRoute> searchRoutes(String from, String to) {
-  //Conrtains start and final destination
   return allRoutes.where((route) {
     final fromIndex = route.stops.indexWhere(
-      //fromIndex=Index of Balahju
       (s) => s.toLowerCase() == from.toLowerCase(),
     );
     final toIndex = route.stops.indexWhere(
-      //toIndex= Index of final destination
       (s) => s.toLowerCase() == to.toLowerCase(),
     );
-    return fromIndex != -1 &&
-        toIndex != -1 &&
-        fromIndex < toIndex; //Returns true if conditon is met for example 2<5
+    return fromIndex != -1 && toIndex != -1 && fromIndex < toIndex;
   }).toList();
 }
 
-//6.Createstate is a function that returns a PassengerScreenState class and _ means private4
+//6.Createstate is a function that returns a PassengerScreenState class
 class PassengerScreen extends StatefulWidget {
   const PassengerScreen({super.key});
 
@@ -101,19 +95,15 @@ class PassengerScreen extends StatefulWidget {
 
 //7.State is a built in flutter class (setState,initState,dispose)tools
 class _PassengerScreenState extends State<PassengerScreen> {
-  //ws protocol now points to the deployed Render backend
   static const String _wsUrl = 'wss://busam.onrender.com/ws/passenger';
+  static const String _backendUrl = 'https://busam.onrender.com';
 
-  //Websocket latlng are data type
-  WebSocketChannel? _channel; //variable will hold websocket channel object
-  LatLng? _busLocation; // holds bus coordinates
-  LatLng? _myLocation; // holds passenger coordinates
+  WebSocketChannel? _channel;
+  LatLng? _busLocation;
+  LatLng? _myLocation;
   String _status = 'Connecting...';
 
-  final MapController _mapController =
-      MapController(); //creating a object of MapController class
-  // // A Stream = a sequence of values that arrive over time, one at a time (not all at once)
-  //Keep watching and report my new position every time i move
+  final MapController _mapController = MapController();
 
   StreamSubscription<Position>? _positionSub;
   bool _hasCenteredOnMe = false;
@@ -127,49 +117,54 @@ class _PassengerScreenState extends State<PassengerScreen> {
   String? _toStop;
   List<BusRoute>? _searchResults;
 
-  // device_id used to identify this passenger for QR scan / wallet
   String? _deviceId;
+
+  double _walletBalance = 0.0;
 
   //8.runs once
   @override
   void initState() {
-    super.initState(); //Internal setup
-    _connect(); //start opening websocket connection to backend
-    _startTrackingMyLocation(); //checking and asking location of passenger permission
-    _loadDeviceId(); //load or create this phone's persistent device id
+    super.initState();
+    _connect();
+    _startTrackingMyLocation();
+    _loadDeviceId();
   }
 
-  // Loads the saved device_id from shared_preferences, or creates
-  // a new one on first launch. Used to identify this passenger's
-  // wallet/trips on the backend (no login system yet).
   Future<void> _loadDeviceId() async {
     final id = await getOrCreateDeviceId();
     if (mounted) setState(() => _deviceId = id);
+    await _fetchWalletBalance();
+  }
+
+  Future<void> _fetchWalletBalance() async {
+    if (_deviceId == null) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$_backendUrl/wallet/$_deviceId'),
+      );
+      final data = jsonDecode(response.body);
+      if (mounted) {
+        setState(() => _walletBalance = (data['balance'] ?? 0.0).toDouble());
+      }
+    } catch (e) {
+      // silently ignore for now, balance just stays at last known value
+    }
   }
 
   //9. Connecting flutter to websocket
   void _connect() {
-    _channel = WebSocketChannel.connect(
-      Uri.parse(_wsUrl),
-    ); //uri.pase(string->uri object), _wsurl is a websocket server url
-    setState(
-      () => _status = 'Waiting for bus location...',
-    ); //smtg changed rebuild the UI
+    _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
+    setState(() => _status = 'Waiting for bus location...');
 
-    //Websocket sends data in JSON as text. Jsondecode converts it into smtg you can access like map
     _channel!.stream.listen(
       (data) {
-        final decoded = jsonDecode(
-          data,
-        ); //converts text that looks like JSON into actual dart object
+        final decoded = jsonDecode(data);
         final lat = decoded['lat'];
         final lng = decoded['lng'];
         final routeId = decoded['route_id'];
         final driverOnline = decoded['driver_online'] ?? false;
 
-        //using above data to assign buslocation and status
         setState(() {
-          //smtg changed build() again so the screen catches up
           _driverOnline = driverOnline;
           _activeRouteId = routeId;
           if (lat != null && lng != null) {
@@ -182,10 +177,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
         });
 
         if (lat != null && lng != null) {
-          _mapController.move(
-            LatLng(lat, lng),
-            _mapController.camera.zoom,
-          ); //Move the maps view so that bus new location is centered
+          _mapController.move(LatLng(lat, lng), _mapController.camera.zoom);
         }
       },
       onError: (error) {
@@ -197,63 +189,42 @@ class _PassengerScreenState extends State<PassengerScreen> {
     );
   }
 
-  //aysnc/await/Future
-  //Future->I will give you later
-  //async->doing smtg that may take time
-  //await->wait until future work is done
-  //Future<T> will be available later not right now
-  //
-
   //Checks if the passenger gps is on or not
   Future<void> _startTrackingMyLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
 
-    //Ask for permission(popup passenger see)
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return;
     }
 
-    //Block the check permanently
     if (permission == LocationPermission.deniedForever) return;
 
-    //Permission granted,now actually start tracking
-    _positionSub =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            //class from geolocator package
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 5, //if moved 5 metre
-          ),
-        ).listen((Position position) {
-          //receive values from stream current lat/lng
-          if (!mounted) return; //screen alive or not ny mounted(bool)
-          final newLocation = LatLng(
-            position.latitude,
-            position.longitude,
-          ); // using new coordinates as new location
-          setState(() => _myLocation = newLocation);
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) {
+      if (!mounted) return;
+      final newLocation = LatLng(position.latitude, position.longitude);
+      setState(() => _myLocation = newLocation);
 
-          //if passenger is not centered and bus is not available centre on passenger
-          if (!_hasCenteredOnMe && _busLocation == null) {
-            _hasCenteredOnMe = true;
-            _mapController.move(
-              newLocation,
-              16,
-            ); //16 is zoom level for close up
-          }
-        });
+      if (!_hasCenteredOnMe && _busLocation == null) {
+        _hasCenteredOnMe = true;
+        _mapController.move(newLocation, 16);
+      }
+    });
   }
 
   void _runSearch() {
     if (_fromStop == null || _toStop == null) return;
     final matched = searchRoutes(_fromStop!, _toStop!);
 
-    // Only keep routes that a currently-online bus is actually running
     final liveMatches = matched
-        .where((r) => _driverOnline && r.id == _activeRouteId) //true && true
+        .where((r) => _driverOnline && r.id == _activeRouteId)
         .toList();
 
     setState(() {
@@ -261,7 +232,6 @@ class _PassengerScreenState extends State<PassengerScreen> {
     });
   }
 
-  //closing everything that happenbed in inistate
   @override
   void dispose() {
     _channel?.sink.close();
@@ -281,19 +251,16 @@ class _PassengerScreenState extends State<PassengerScreen> {
       body: Stack(
         children: [
           FlutterMap(
-            mapController:
-                _mapController, //mapcontroller to autocenter passenger
+            mapController: _mapController,
             options: MapOptions(
               initialCenter: center,
               initialZoom: 14,
-            ), //mapoption for intial map load of centering
+            ),
             children: [
               TileLayer(
-                //visible map like street,building,water
                 urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png', //Openstreetmap
-                userAgentPackageName:
-                    'com.example.transit_app', //to identify my app for requesting map
+                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.transit_app',
               ),
               MarkerLayer(
                 markers: [
@@ -325,16 +292,12 @@ class _PassengerScreenState extends State<PassengerScreen> {
           ),
           //1.
           Positioned(
-            //to decide exactly where top/middle/bottom
             top: 0,
             left: 0,
             right: 0,
             child: SafeArea(
-              //avoid phone hardware obstruction
               child: Container(
-                margin: const EdgeInsets.all(
-                  12,
-                ), //for the white card with balance and student id
+                margin: const EdgeInsets.all(12),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 12,
@@ -344,7 +307,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 8,
                     ),
                   ],
@@ -353,17 +316,19 @@ class _PassengerScreenState extends State<PassengerScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      children: const [
-                        Icon(Icons.account_balance_wallet_outlined),
-                        SizedBox(width: 8),
+                      children: [
+                        const Icon(Icons.account_balance_wallet_outlined),
+                        const SizedBox(width: 8),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'NPR 000.00',
-                              style: TextStyle(fontWeight: FontWeight.bold),
+                              'NPR ${_walletBalance.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            Text(
+                            const Text(
                               'Balance',
                               style: TextStyle(
                                 fontSize: 12,
@@ -424,7 +389,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
                 heroTag: 'qr_scan_btn',
                 backgroundColor: Colors.green,
                 onPressed: _deviceId == null
-                    ? null // disabled until device id finishes loading
+                    ? null
                     : () {
                         Navigator.push(
                           context,
@@ -445,7 +410,6 @@ class _PassengerScreenState extends State<PassengerScreen> {
             left: 0,
             right: 0,
             child: SafeArea(
-              // to avoid hardware obstruction
               top: false,
               child: Container(
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -455,7 +419,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
+                      color: Colors.black.withOpacity(0.1),
                       blurRadius: 8,
                     ),
                   ],
@@ -470,10 +434,8 @@ class _PassengerScreenState extends State<PassengerScreen> {
                           child: Text('No buses found for this route'),
                         )
                       else
-                        //Basically bus icon with route a->b->c->
                         ..._searchResults!.map(
                           (r) => ListTile(
-                            //template
                             dense: true,
                             leading: const Icon(
                               Icons.directions_bus,
@@ -484,18 +446,15 @@ class _PassengerScreenState extends State<PassengerScreen> {
                           ),
                         ),
 
-                      const Divider(), //------draws horizontal line across screen
+                      const Divider(),
                     ],
                     Row(
                       children: [
                         const Icon(Icons.trip_origin, size: 18),
                         const SizedBox(width: 8),
                         Expanded(
-                          //icon 18 px sizedbox 8 pix expanded grows to fill whatever horizontal space is left in the row
                           child: Autocomplete<String>(
-                            //build in widget that handles 'type text,see filtered suggestion dropdown,pick me' pattern
                             optionsBuilder: (TextEditingValue value) {
-                              //For recommendation  If B is typed Balaju is recommended
                               if (value.text.isEmpty)
                                 return const Iterable<String>.empty();
                               return stops.where(
@@ -504,22 +463,12 @@ class _PassengerScreenState extends State<PassengerScreen> {
                                 ),
                               );
                             },
-                            //Runs when passenger taps one of the suggestion
-                            onSelected:
-                                (
-                                  String selection,
-                                ) => //selection -> whichever location he tapped saves in into fromstop variable set via setState
-                                    setState(() => _fromStop = selection),
-
-                            //what the txt box looks like (only the top box the actual texfield ram types into the location)
+                            onSelected: (String selection) =>
+                                setState(() => _fromStop = selection),
                             fieldViewBuilder: (context, controller, focusNode, onSubmit) {
                               return TextField(
-                                controller:
-                                    controller, //A TextEditingController object, created and owned by Autocomplete itself — not by you
-                                //Its job: hold the actual text currently typed, and let you read/change it programmatically
-                                focusNode:
-                                    focusNode, // A FocusNode object — tracks whether this particular text field is currently focused
-                                //Needed because Autocomplete needs to know "is the user actively typing in THIS box" to decide when to show/hide the suggestions dropdown
+                                controller: controller,
+                                focusNode: focusNode,
                                 decoration: const InputDecoration(
                                   hintText: 'From',
                                   border: InputBorder.none,
@@ -583,13 +532,21 @@ class _PassengerScreenState extends State<PassengerScreen> {
         currentIndex: _navIndex,
         selectedItemColor: Colors.green,
         unselectedItemColor: Colors.grey,
-        onTap: (index) {
+        onTap: (index) async {
           setState(() => _navIndex = index);
           if (index == 1 && _deviceId != null) {
-            Navigator.push(
+            await Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => LoadMoneyScreen(deviceId: _deviceId!),
+              ),
+            );
+            _fetchWalletBalance();
+          } else if (index == 2 && _deviceId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PassCompanyScreen(deviceId: _deviceId!),
               ),
             );
           } else if (index != 0) {

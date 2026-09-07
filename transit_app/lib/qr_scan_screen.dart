@@ -16,18 +16,18 @@ class _QrScanScreenState extends State<QrScanScreen> {
   static const String _backendUrl = 'https://busam.onrender.com';
 
   bool _processing = false;
-  bool _scanCompleted = false; // NEW: locks out further scans once one succeeds
+  bool _scanCompleted = false;
   String? _resultMessage;
 
-  Future<void> _handleScan(String routeId) async {
-    // Ignore any further detections once we're processing OR already got a result
-    if (_processing || _scanCompleted) return;
+  // exit payment-choice state
+  bool _showPaymentChoice = false;
+  Map<String, dynamic>? _exitData;
 
-    setState(() {
-      _processing = true;
-      _scanCompleted =
-          true; // lock immediately, before the async call even starts
-    });
+  Future<void> _handleScan(String routeId) async {
+    // Ignore further detections while processing, mid-payment-choice, or already done
+    if (_processing || _scanCompleted || _showPaymentChoice) return;
+
+    setState(() => _processing = true);
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -47,13 +47,55 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
       final data = jsonDecode(response.body);
 
-      setState(() {
-        _resultMessage = data['message'];
-      });
+      if (data['event'] == 'exit_pending') {
+        // exit scan: show payment choice instead of a final message
+        setState(() {
+          _showPaymentChoice = true;
+          _exitData = data;
+        });
+      } else {
+        // boarding scan
+        setState(() {
+          _scanCompleted = true;
+          _resultMessage = data['message'];
+        });
+      }
     } catch (e) {
-      setState(() => _resultMessage = 'Error: $e');
+      setState(() {
+        _scanCompleted = true;
+        _resultMessage = 'Error: $e';
+      });
     } finally {
       setState(() => _processing = false);
+    }
+  }
+
+  Future<void> _confirmExit(String method) async {
+    setState(() => _processing = true);
+
+    try {
+      final response = await http.post(
+        Uri.parse('$_backendUrl/qr/confirm_exit'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'device_id': widget.deviceId,
+          'method': method,
+        }),
+      );
+      final data = jsonDecode(response.body);
+
+      setState(() {
+        _processing = false;
+        _showPaymentChoice = false;
+        _scanCompleted = true;
+        _resultMessage = data['message'] ??
+            (data['success'] == true ? 'Trip complete.' : 'Payment failed.');
+      });
+    } catch (e) {
+      setState(() {
+        _processing = false;
+        _resultMessage = 'Error: $e';
+      });
     }
   }
 
@@ -65,12 +107,12 @@ class _QrScanScreenState extends State<QrScanScreen> {
         children: [
           Expanded(
             flex: 3,
-            child: _scanCompleted
+            child: (_scanCompleted || _showPaymentChoice)
                 ? Container(
                     color: Colors.black,
-                    child: const Center(
+                    child: Center(
                       child: Icon(
-                        Icons.check_circle,
+                        _showPaymentChoice ? Icons.payment : Icons.check_circle,
                         color: Colors.green,
                         size: 64,
                       ),
@@ -89,30 +131,84 @@ class _QrScanScreenState extends State<QrScanScreen> {
                   ),
           ),
           Expanded(
-            flex: 1,
+            flex: 2,
             child: Center(
               child: _processing
                   ? const CircularProgressIndicator()
-                  : Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _resultMessage ?? 'Point camera at the bus QR code',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 16),
+                  : _showPaymentChoice
+                      ? _buildPaymentChoice()
+                      : Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _resultMessage ??
+                                    'Point camera at the bus QR code',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                              if (_scanCompleted) ...[
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Done'),
+                                ),
+                              ],
+                            ],
                           ),
-                          if (_scanCompleted) ...[
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Done'),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
+                        ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentChoice() {
+    final distance = _exitData?['distance_km'];
+    final walletFare = _exitData?['wallet_fare'];
+    final passAvailable = _exitData?['pass_available'] == true;
+    final passRides = _exitData?['pass_rides_remaining'] ?? 0;
+    final company = _exitData?['company'] ?? 'this company';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Distance: ${distance}km',
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'How would you like to pay?',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: () => _confirmExit('wallet'),
+              child: Text('Pay with Wallet — NPR $walletFare'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: passAvailable ? () => _confirmExit('pass') : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: passAvailable ? Colors.blue : Colors.grey[300],
+              ),
+              child: Text(
+                passAvailable
+                    ? 'Pay with $company Pass ($passRides left)'
+                    : 'No $company pass available',
+              ),
             ),
           ),
         ],

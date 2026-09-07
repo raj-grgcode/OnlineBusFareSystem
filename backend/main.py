@@ -86,7 +86,19 @@ async def passenger_socket(websocket: WebSocket):
 # on first launch (generated client-side), and that's used as the "user"
 
 wallets: dict[str, float] = {}          # device_id -> balance
-open_trips: dict[str, dict] = {}        # device_id -> {route_id, board_lat, board_lng, board_time}
+open_trips: dict[str, dict] = {}        # device_id -> {route_id, board_lat, board_lng}
+pending_exits: dict[str, dict] = {}     # device_id -> {distance_km, fare, company}
+
+# ---- Ride passes (flat-rate bundles, NPR 20/ride, scoped per company) ----
+ride_passes: dict[str, dict[str, int]] = {}   # device_id -> {company: rides_remaining}
+PRICE_PER_RIDE = 20
+
+# Which company each route belongs to — a pass only works on that company's buses
+ROUTE_COMPANY = {
+    "mayuri_jamal": "Mayuri",
+    "mayuri_baudha": "Mayuri",
+    "sajha_koteshwor": "Sajha",
+}
 
 
 def haversine_km(lat1, lng1, lat2, lng2) -> float:
@@ -102,7 +114,7 @@ def haversine_km(lat1, lng1, lat2, lng2) -> float:
 
 
 def calculate_fare(distance_km: float) -> float:
-    """Tiered fare based on distance."""
+    """Tiered fare based on distance. Used for wallet payment."""
     if distance_km <= 15:
         return 30.0
     elif distance_km <= 30:
@@ -124,7 +136,9 @@ class QrScanRequest(BaseModel):
 async def qr_scan(req: QrScanRequest):
     """
     Called every time a passenger scans the bus QR.
-    First scan = board, second scan (while a trip is open) = exit + fare deduction.
+    First scan = board. Second scan = calculates trip details and
+    returns payment OPTIONS (wallet vs pass) without deducting anything yet —
+    the app then calls /qr/confirm_exit with the passenger's choice.
     """
     existing_trip = open_trips.get(req.device_id)
 
@@ -141,36 +155,74 @@ async def qr_scan(req: QrScanRequest):
         }
 
     else:
-        # ---- EXIT ----
+        # ---- EXIT: calculate, but don't deduct yet ----
         distance = haversine_km(
             existing_trip["board_lat"], existing_trip["board_lng"], req.lat, req.lng
         )
         fare = calculate_fare(distance)
+        company = ROUTE_COMPANY.get(existing_trip["route_id"])
+        rides_remaining = ride_passes.get(req.device_id, {}).get(company, 0) if company else 0
 
-        balance = wallets.get(req.device_id, 0.0)
-        if balance < fare:
-            # Not enough balance - trip stays open? Or force clear it.
-            # For demo purposes, clear the trip either way but flag insufficient funds.
-            del open_trips[req.device_id]
-            return {
-                "event": "exit",
-                "distance_km": round(distance, 2),
-                "fare": fare,
-                "success": False,
-                "message": "Insufficient balance. Please load money.",
-                "balance": balance,
-            }
-
-        wallets[req.device_id] = balance - fare
+        pending_exits[req.device_id] = {
+            "distance_km": round(distance, 2),
+            "fare": fare,
+            "company": company,
+        }
         del open_trips[req.device_id]
 
         return {
-            "event": "exit",
+            "event": "exit_pending",
             "distance_km": round(distance, 2),
-            "fare": fare,
+            "wallet_fare": fare,
+            "wallet_balance": wallets.get(req.device_id, 0.0),
+            "company": company,
+            "pass_rides_remaining": rides_remaining,
+            "pass_available": rides_remaining > 0,
+        }
+
+
+class ConfirmExitRequest(BaseModel):
+    device_id: str
+    method: str  # "wallet" or "pass"
+
+
+@app.post("/qr/confirm_exit")
+async def confirm_exit(req: ConfirmExitRequest):
+    pending = pending_exits.get(req.device_id)
+    if pending is None:
+        return {"success": False, "message": "No pending trip to confirm"}
+
+    company = pending["company"]
+    fare = pending["fare"]
+    distance = pending["distance_km"]
+
+    if req.method == "pass":
+        company_passes = ride_passes.setdefault(req.device_id, {})
+        remaining = company_passes.get(company, 0)
+        if remaining <= 0:
+            return {"success": False, "message": "No pass rides remaining"}
+        company_passes[company] = remaining - 1
+        del pending_exits[req.device_id]
+        return {
             "success": True,
-            "message": f"Trip complete. NPR {fare} deducted.",
+            "method": "pass",
+            "distance_km": distance,
+            "rides_remaining": company_passes[company],
+            "message": f"Trip complete using pass. {company_passes[company]} rides left.",
+        }
+    else:
+        balance = wallets.get(req.device_id, 0.0)
+        if balance < fare:
+            return {"success": False, "message": "Insufficient wallet balance. Please load money."}
+        wallets[req.device_id] = balance - fare
+        del pending_exits[req.device_id]
+        return {
+            "success": True,
+            "method": "wallet",
+            "distance_km": distance,
+            "fare": fare,
             "balance": wallets[req.device_id],
+            "message": f"Trip complete. NPR {fare} deducted from wallet.",
         }
 
 
@@ -192,6 +244,51 @@ async def load_wallet(req: LoadMoneyRequest):
     """
     wallets[req.device_id] = wallets.get(req.device_id, 0.0) + req.amount
     return {"balance": wallets[req.device_id]}
+
+
+# ---- Ride pass endpoints (per-company passes) ----
+
+class BuyPassRequest(BaseModel):
+    device_id: str
+    company: str
+    rides: int
+
+
+@app.post("/pass/buy")
+async def buy_pass(req: BuyPassRequest):
+    """
+    Buys a bundle of `rides` ride-credits for a specific company,
+    at NPR 20/ride, deducted from wallet. Only usable on that company's buses.
+    """
+    if req.rides <= 0:
+        return {"success": False, "message": "Invalid ride count"}
+
+    cost = req.rides * PRICE_PER_RIDE
+    balance = wallets.get(req.device_id, 0.0)
+
+    if balance < cost:
+        return {
+            "success": False,
+            "message": "Insufficient wallet balance",
+            "wallet_balance": balance,
+            "cost": cost,
+        }
+
+    wallets[req.device_id] = balance - cost
+    company_passes = ride_passes.setdefault(req.device_id, {})
+    company_passes[req.company] = company_passes.get(req.company, 0) + req.rides
+
+    return {
+        "success": True,
+        "message": f"Pass purchased: {req.rides} rides for {req.company}",
+        "rides_remaining": company_passes[req.company],
+        "wallet_balance": wallets[req.device_id],
+    }
+
+
+@app.get("/pass/{device_id}")
+async def get_passes(device_id: str):
+    return {"passes": ride_passes.get(device_id, {})}
 
 
 # ---- eSewa payment integration (UAT/sandbox — kept for reference, not currently used) ----
