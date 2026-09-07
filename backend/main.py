@@ -9,7 +9,30 @@ import hashlib
 import base64
 import uuid
 import httpx
+import os
+from sqlalchemy import create_engine, Column, Integer, String, Boolean
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(bind=engine)
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)
+    is_verified = Column(Boolean, default=False)
+
+
+# Creates the users table in Postgres if it doesn't already exist
+Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
 # Every passenger currently connected and listening for updates
