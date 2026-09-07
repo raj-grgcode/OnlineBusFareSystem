@@ -33,6 +33,30 @@ class User(Base):
 
 # Creates the users table in Postgres if it doesn't already exist
 Base.metadata.create_all(bind=engine)
+import random
+import smtplib
+from email.mime.text import MIMEText
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
+
+# temporary in-memory OTP storage: email -> {"otp": "123456", "name":..., "phone":..., "password_hash":...}
+pending_signups: dict[str, dict] = {}
+
+
+def send_otp_email(to_email: str, otp: str):
+    msg = MIMEText(f"Your BusAm verification code is: {otp}")
+    msg["Subject"] = "BusAm - Verify your email"
+    msg["From"] = GMAIL_ADDRESS
+    msg["To"] = to_email
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
+
 app = FastAPI()
 
 # Every passenger currently connected and listening for updates
