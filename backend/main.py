@@ -471,3 +471,96 @@ async def mock_pay_confirm(device_id: str = Form(...), amount: float = Form(...)
         f"<h2>Payment successful! NPR {amount} added.</h2>"
         f"<p>New balance: NPR {wallets[device_id]}</p>"
     )
+
+class SignupRequest(BaseModel):
+    name: str
+    phone: str
+    email: str
+    password: str
+
+
+@app.post("/signup")
+async def signup(req: SignupRequest):
+    db = SessionLocal()
+    existing = db.query(User).filter(User.email == req.email).first()
+    db.close()
+
+    if existing:
+        return {"success": False, "message": "Email already registered"}
+
+    otp = str(random.randint(100000, 999999))
+    password_hash = pwd_context.hash(req.password)
+
+    pending_signups[req.email] = {
+        "otp": otp,
+        "name": req.name,
+        "phone": req.phone,
+        "password_hash": password_hash,
+    }
+
+    try:
+        send_otp_email(req.email, otp)
+    except Exception as e:
+        return {"success": False, "message": f"Failed to send OTP: {e}"}
+
+    return {"success": True, "message": "OTP sent to your email"}
+
+
+class VerifyOtpRequest(BaseModel):
+    email: str
+    otp: str
+
+
+@app.post("/verify-otp")
+async def verify_otp(req: VerifyOtpRequest):
+    pending = pending_signups.get(req.email)
+
+    if not pending:
+        return {"success": False, "message": "No pending signup for this email"}
+
+    if pending["otp"] != req.otp:
+        return {"success": False, "message": "Incorrect OTP"}
+
+    db = SessionLocal()
+    new_user = User(
+        name=pending["name"],
+        phone=pending["phone"],
+        email=req.email,
+        password_hash=pending["password_hash"],
+        is_verified=True,
+    )
+    db.add(new_user)
+    db.commit()
+    db.close()
+
+    del pending_signups[req.email]
+
+    return {"success": True, "message": "Account created successfully"}
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/login")
+async def login(req: LoginRequest):
+    db = SessionLocal()
+    user = db.query(User).filter(User.email == req.email).first()
+    db.close()
+
+    if not user:
+        return {"success": False, "message": "No account found with this email"}
+
+    if not pwd_context.verify(req.password, user.password_hash):
+        return {"success": False, "message": "Incorrect password"}
+
+    return {
+        "success": True,
+        "message": "Login successful",
+        "user": {
+            "name": user.name,
+            "phone": user.phone,
+            "email": user.email,
+        },
+    }
