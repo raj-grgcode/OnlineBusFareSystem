@@ -46,18 +46,23 @@ GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 # temporary in-memory OTP storage: email -> {"otp": "123456", "name":..., "phone":..., "password_hash":...}
 pending_signups: dict[str, dict] = {}
 
-
 def send_otp_email(to_email: str, otp: str):
-    msg = MIMEText(f"Your BusAm verification code is: {otp}")
-    msg["Subject"] = "BusAm - Verify your email"
-    msg["From"] = GMAIL_ADDRESS
-    msg["To"] = to_email
+    BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
-        server.sendmail(GMAIL_ADDRESS, to_email, msg.as_string())
-
+    response = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={
+            "api-key": BREVO_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json={
+            "sender": {"name": "BusAm", "email": "rajbackup12345@gmail.com"},
+            "to": [{"email": to_email}],
+            "subject": "BusAm - Verify your email",
+            "textContent": f"Your BusAm verification code is: {otp}",
+        },
+    )
+    response.raise_for_status()
 app = FastAPI()
 
 # Every passenger currently connected and listening for updates
