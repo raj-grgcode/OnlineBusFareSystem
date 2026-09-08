@@ -570,3 +570,83 @@ async def login(req: LoginRequest):
             "email": user.email,
         },
     }
+    from datetime import date
+
+# device_id -> {"status": "pending"/"approved"/"rejected", "expiry_date": "YYYY-MM-DD" or None, "image_base64": str}
+student_verifications: dict[str, dict] = {}
+
+
+def is_student_verified(device_id: str) -> bool:
+    record = student_verifications.get(device_id)
+    if not record or record.get("status") != "approved":
+        return False
+    expiry = record.get("expiry_date")
+    if not expiry:
+        return False
+    return date.fromisoformat(expiry) >= date.today()
+
+
+class SubmitIdRequest(BaseModel):
+    device_id: str
+    image_base64: str
+
+
+@app.post("/student-id/submit")
+async def submit_student_id(req: SubmitIdRequest):
+    student_verifications[req.device_id] = {
+        "status": "pending",
+        "expiry_date": None,
+        "image_base64": req.image_base64,
+    }
+    return {"success": True, "message": "ID submitted, pending review."}
+
+
+@app.get("/student-id/status/{device_id}")
+async def get_student_id_status(device_id: str):
+    record = student_verifications.get(device_id)
+    if not record:
+        return {"status": "none"}
+    return {
+        "status": record["status"],
+        "expiry_date": record.get("expiry_date"),
+        "verified": is_student_verified(device_id),
+    }
+
+
+@app.get("/admin/student-id/pending")
+async def list_pending_student_ids():
+    """Returns all submissions currently awaiting review."""
+    pending = {
+        device_id: record
+        for device_id, record in student_verifications.items()
+        if record["status"] == "pending"
+    }
+    return {"pending": pending}
+
+
+class ApproveIdRequest(BaseModel):
+    device_id: str
+    expiry_date: str  # "YYYY-MM-DD"
+
+
+@app.post("/admin/student-id/approve")
+async def approve_student_id(req: ApproveIdRequest):
+    record = student_verifications.get(req.device_id)
+    if not record:
+        return {"success": False, "message": "No submission found"}
+    record["status"] = "approved"
+    record["expiry_date"] = req.expiry_date
+    return {"success": True, "message": "Approved"}
+
+
+class RejectIdRequest(BaseModel):
+    device_id: str
+
+
+@app.post("/admin/student-id/reject")
+async def reject_student_id(req: RejectIdRequest):
+    record = student_verifications.get(req.device_id)
+    if not record:
+        return {"success": False, "message": "No submission found"}
+    record["status"] = "rejected"
+    return {"success": True, "message": "Rejected"}
