@@ -12,6 +12,7 @@ import 'qr_scan_screen.dart';
 import 'device_id.dart';
 import 'load_money_screen.dart';
 import 'pass_company_screen.dart';
+import 'profile_screen.dart';
 
 //2. class for the Busroute validation
 class BusRoute {
@@ -547,10 +548,10 @@ class _PassengerScreenState extends State<PassengerScreen> {
                 builder: (context) => PassCompanyScreen(deviceId: _deviceId!),
               ),
             );
-          } else if (index != 0) {
-            final labels = ['Home', 'Load Money', 'Pass', 'Profile'];
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('${labels[index]} - coming soon')),
+          } else if (index == 3) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProfileScreen()),
             );
           }
         },

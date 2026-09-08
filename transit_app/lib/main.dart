@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'driver_screen.dart';
-import 'passenger_screen.dart';
+import 'login_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,33 +31,29 @@ class RoleSelectScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(220, 60)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(220, 60),
+              ),
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const DriverScreen()),
                 );
               },
-              child: const Text(
-                'I\'m the Driver',
-                style: TextStyle(fontSize: 18),
-              ),
+              child: const Text('I\'m the Driver', style: TextStyle(fontSize: 18)),
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(minimumSize: const Size(220, 60)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(220, 60),
+              ),
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (context) => const PassengerScreen(),
-                  ),
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
                 );
               },
-              child: const Text(
-                'I\'m the Passenger',
-                style: TextStyle(fontSize: 18),
-              ),
+              child: const Text('I\'m the Passenger', style: TextStyle(fontSize: 18)),
             ),
           ],
         ),
