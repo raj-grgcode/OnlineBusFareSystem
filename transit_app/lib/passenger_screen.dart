@@ -13,6 +13,7 @@ import 'device_id.dart';
 import 'load_money_screen.dart';
 import 'pass_company_screen.dart';
 import 'profile_screen.dart';
+import 'student_id_screen.dart';
 
 //2. class for the Busroute validation
 class BusRoute {
@@ -339,7 +340,15 @@ class _PassengerScreenState extends State<PassengerScreen> {
                     ),
                     GestureDetector(
                       onTap: () {
-                        // TODO: open student ID card screen
+                        if (_deviceId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  StudentIdScreen(deviceId: _deviceId!),
+                            ),
+                          );
+                        }
                       },
                       child: Row(
                         children: const [
