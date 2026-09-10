@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form
 from fastapi.responses import HTMLResponse
+from datetime import date
 import json
 import math
 import uuid as uuid_lib
@@ -10,9 +11,12 @@ import base64
 import uuid
 import httpx
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Boolean
+import random
+import time
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from passlib.context import CryptContext
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -31,20 +35,38 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
 
 
-# Creates the users table in Postgres if it doesn't already exist
+class Wallet(Base):
+    __tablename__ = "wallets"
+    device_id = Column(String, primary_key=True, index=True)
+    balance = Column(Float, default=0.0)
+
+
+class RidePass(Base):
+    __tablename__ = "ride_passes"
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(String, index=True, nullable=False)
+    company = Column(String, nullable=False)
+    rides_remaining = Column(Integer, default=0)
+
+
+class StudentVerification(Base):
+    __tablename__ = "student_verifications"
+    device_id = Column(String, primary_key=True, index=True)
+    status = Column(String, default="pending")  # pending / approved / rejected
+    expiry_date = Column(String, nullable=True)
+    image_base64 = Column(String, nullable=True)
+
+
+# Creates all tables (users, wallets, ride_passes, student_verifications) if they don't exist
 Base.metadata.create_all(bind=engine)
-import random
-import smtplib
-from email.mime.text import MIMEText
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD")
 
 # temporary in-memory OTP storage: email -> {"otp": "123456", "name":..., "phone":..., "password_hash":...}
 pending_signups: dict[str, dict] = {}
+
 
 def send_otp_email(to_email: str, otp: str):
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
@@ -63,6 +85,20 @@ def send_otp_email(to_email: str, otp: str):
         },
     )
     response.raise_for_status()
+
+
+def haversine_km(lat1, lng1, lat2, lng2) -> float:
+    """Straight-line distance between two GPS points, in kilometers."""
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lng2 - lng1)
+
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
 app = FastAPI()
 
 # Every passenger currently connected and listening for updates
@@ -75,6 +111,12 @@ latest_location = {"lat": None, "lng": None, "route_id": None}
 # Whether a driver is currently connected/broadcasting
 driver_online = False
 
+# ---- Speed tracking state ----
+previous_location = {"lat": None, "lng": None, "time": None}
+current_speed_kmh = 0.0
+speed_samples = []  # recent speed readings, for smoothing
+MAX_SPEED_SAMPLES = 5
+
 
 @app.websocket("/ws/driver")
 async def driver_socket(websocket: WebSocket):
@@ -82,7 +124,7 @@ async def driver_socket(websocket: WebSocket):
     The driver's phone connects here ONCE, then keeps sending
     new locations (+ route_id) over this same open connection.
     """
-    global driver_online
+    global driver_online, current_speed_kmh
     await websocket.accept()
     driver_online = True
     print("Driver connected")
@@ -92,23 +134,59 @@ async def driver_socket(websocket: WebSocket):
             data = await websocket.receive_text()
             location = json.loads(data)  # {"lat": ..., "lng": ..., "route_id": ...}
 
-            latest_location["lat"] = location.get("lat")
-            latest_location["lng"] = location.get("lng")
-            latest_location["route_id"] = location.get("route_id")
-            print(f"Received location: {latest_location}")
+            new_lat = location.get("lat")
+            new_lng = location.get("lng")
+            now = time.time()
 
-            # Push this new location to every connected passenger
-            payload = json.dumps({**latest_location, "driver_online": True})
+            # ---- Speed calculation (smoothed rolling average) ----
+            if (
+                previous_location["lat"] is not None
+                and previous_location["time"] is not None
+                and new_lat is not None
+            ):
+                time_elapsed = now - previous_location["time"]
+                if time_elapsed > 0.5:
+                    dist = haversine_km(
+                        previous_location["lat"], previous_location["lng"], new_lat, new_lng
+                    )
+                    instantaneous_speed = (dist / time_elapsed) * 3600  # km/h
+
+                    speed_samples.append(instantaneous_speed)
+                    if len(speed_samples) > MAX_SPEED_SAMPLES:
+                        speed_samples.pop(0)
+                    current_speed_kmh = sum(speed_samples) / len(speed_samples)
+
+            previous_location["lat"] = new_lat
+            previous_location["lng"] = new_lng
+            previous_location["time"] = now
+
+            latest_location["lat"] = new_lat
+            latest_location["lng"] = new_lng
+            latest_location["route_id"] = location.get("route_id")
+            print(f"Received location: {latest_location}, speed: {current_speed_kmh:.1f} km/h")
+
+            payload = json.dumps({
+                **latest_location,
+                "driver_online": True,
+                "speed_kmh": round(current_speed_kmh, 1),
+            })
             for passenger in connected_passengers:
                 await passenger.send_text(payload)
 
     except WebSocketDisconnect:
         driver_online = False
         latest_location["route_id"] = None
+        previous_location["lat"] = None
+        previous_location["lng"] = None
+        previous_location["time"] = None
+        speed_samples.clear()
+        current_speed_kmh = 0.0
         print("Driver disconnected")
 
-        # Let passengers know the bus went offline
-        payload = json.dumps({"lat": None, "lng": None, "route_id": None, "driver_online": False})
+        payload = json.dumps({
+            "lat": None, "lng": None, "route_id": None,
+            "driver_online": False, "speed_kmh": 0.0,
+        })
         for passenger in connected_passengers:
             await passenger.send_text(payload)
 
@@ -122,8 +200,11 @@ async def passenger_socket(websocket: WebSocket):
     connected_passengers.append(websocket)
     print("Passenger connected")
 
-    # Send whatever the last known state was immediately
-    await websocket.send_text(json.dumps({**latest_location, "driver_online": driver_online}))
+    await websocket.send_text(json.dumps({
+        **latest_location,
+        "driver_online": driver_online,
+        "speed_kmh": round(current_speed_kmh, 1),
+    }))
 
     try:
         while True:
@@ -133,17 +214,10 @@ async def passenger_socket(websocket: WebSocket):
         print("Passenger disconnected")
 
 
-
-# ---- Wallet + Trip tracking (in-memory, no DB yet) ----
-# Since there's no login system yet, each phone gets a random device_id
-# on first launch (generated client-side), and that's used as the "user"
-
-wallets: dict[str, float] = {}          # device_id -> balance
+# ---- Trip tracking (still in-memory - transient by nature) ----
 open_trips: dict[str, dict] = {}        # device_id -> {route_id, board_lat, board_lng}
 pending_exits: dict[str, dict] = {}     # device_id -> {distance_km, fare, company}
 
-# ---- Ride passes (flat-rate bundles, NPR 20/ride, scoped per company) ----
-ride_passes: dict[str, dict[str, int]] = {}   # device_id -> {company: rides_remaining}
 PRICE_PER_RIDE = 20
 
 # Which company each route belongs to — a pass only works on that company's buses
@@ -152,18 +226,6 @@ ROUTE_COMPANY = {
     "mayuri_baudha": "Mayuri",
     "sajha_koteshwor": "Sajha",
 }
-
-
-def haversine_km(lat1, lng1, lat2, lng2) -> float:
-    """Straight-line distance between two GPS points, in kilometers."""
-    R = 6371  # Earth radius in km
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lng2 - lng1)
-
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
 
 
 def calculate_fare(distance_km: float) -> float:
@@ -175,7 +237,7 @@ def calculate_fare(distance_km: float) -> float:
     elif distance_km <= 45:
         return 70.0
     else:
-        return 90.0  # fallback for longer trips
+        return 90.0
 
 
 class QrScanRequest(BaseModel):
@@ -196,7 +258,6 @@ async def qr_scan(req: QrScanRequest):
     existing_trip = open_trips.get(req.device_id)
 
     if existing_trip is None:
-        # ---- BOARDING ----
         open_trips[req.device_id] = {
             "route_id": req.route_id,
             "board_lat": req.lat,
@@ -208,13 +269,23 @@ async def qr_scan(req: QrScanRequest):
         }
 
     else:
-        # ---- EXIT: calculate, but don't deduct yet ----
         distance = haversine_km(
             existing_trip["board_lat"], existing_trip["board_lng"], req.lat, req.lng
         )
         fare = calculate_fare(distance)
         company = ROUTE_COMPANY.get(existing_trip["route_id"])
-        rides_remaining = ride_passes.get(req.device_id, {}).get(company, 0) if company else 0
+
+        db = SessionLocal()
+        wallet = db.query(Wallet).filter(Wallet.device_id == req.device_id).first()
+        ride_pass = (
+            db.query(RidePass)
+            .filter(RidePass.device_id == req.device_id, RidePass.company == company)
+            .first()
+        ) if company else None
+        db.close()
+
+        wallet_balance = wallet.balance if wallet else 0.0
+        rides_remaining = ride_pass.rides_remaining if ride_pass else 0
 
         pending_exits[req.device_id] = {
             "distance_km": round(distance, 2),
@@ -227,7 +298,7 @@ async def qr_scan(req: QrScanRequest):
             "event": "exit_pending",
             "distance_km": round(distance, 2),
             "wallet_fare": fare,
-            "wallet_balance": wallets.get(req.device_id, 0.0),
+            "wallet_balance": wallet_balance,
             "company": company,
             "pass_rides_remaining": rides_remaining,
             "pass_available": rides_remaining > 0,
@@ -250,38 +321,64 @@ async def confirm_exit(req: ConfirmExitRequest):
     distance = pending["distance_km"]
 
     if req.method == "pass":
-        company_passes = ride_passes.setdefault(req.device_id, {})
-        remaining = company_passes.get(company, 0)
-        if remaining <= 0:
+        db = SessionLocal()
+        ride_pass = (
+            db.query(RidePass)
+            .filter(RidePass.device_id == req.device_id, RidePass.company == company)
+            .first()
+        )
+        if not ride_pass or ride_pass.rides_remaining <= 0:
+            db.close()
             return {"success": False, "message": "No pass rides remaining"}
-        company_passes[company] = remaining - 1
+
+        ride_pass.rides_remaining -= 1
+        db.commit()
+        remaining = ride_pass.rides_remaining
+        db.close()
+
         del pending_exits[req.device_id]
         return {
             "success": True,
             "method": "pass",
             "distance_km": distance,
-            "rides_remaining": company_passes[company],
-            "message": f"Trip complete using pass. {company_passes[company]} rides left.",
+            "rides_remaining": remaining,
+            "message": f"Trip complete using pass. {remaining} rides left.",
         }
     else:
-        balance = wallets.get(req.device_id, 0.0)
+        db = SessionLocal()
+        wallet = db.query(Wallet).filter(Wallet.device_id == req.device_id).first()
+        balance = wallet.balance if wallet else 0.0
+
         if balance < fare:
+            db.close()
             return {"success": False, "message": "Insufficient wallet balance. Please load money."}
-        wallets[req.device_id] = balance - fare
+
+        if wallet:
+            wallet.balance -= fare
+        else:
+            wallet = Wallet(device_id=req.device_id, balance=-fare)
+            db.add(wallet)
+        db.commit()
+        new_balance = wallet.balance
+        db.close()
+
         del pending_exits[req.device_id]
         return {
             "success": True,
             "method": "wallet",
             "distance_km": distance,
             "fare": fare,
-            "balance": wallets[req.device_id],
+            "balance": new_balance,
             "message": f"Trip complete. NPR {fare} deducted from wallet.",
         }
 
 
 @app.get("/wallet/{device_id}")
 async def get_wallet(device_id: str):
-    return {"balance": wallets.get(device_id, 0.0)}
+    db = SessionLocal()
+    wallet = db.query(Wallet).filter(Wallet.device_id == device_id).first()
+    db.close()
+    return {"balance": wallet.balance if wallet else 0.0}
 
 
 class LoadMoneyRequest(BaseModel):
@@ -291,12 +388,17 @@ class LoadMoneyRequest(BaseModel):
 
 @app.post("/wallet/load")
 async def load_wallet(req: LoadMoneyRequest):
-    """
-    Manually add money to wallet - stand-in until real eSewa payment
-    verification is wired in later.
-    """
-    wallets[req.device_id] = wallets.get(req.device_id, 0.0) + req.amount
-    return {"balance": wallets[req.device_id]}
+    db = SessionLocal()
+    wallet = db.query(Wallet).filter(Wallet.device_id == req.device_id).first()
+    if wallet:
+        wallet.balance += req.amount
+    else:
+        wallet = Wallet(device_id=req.device_id, balance=req.amount)
+        db.add(wallet)
+    db.commit()
+    balance = wallet.balance
+    db.close()
+    return {"balance": balance}
 
 
 # ---- Ride pass endpoints (per-company passes) ----
@@ -309,17 +411,17 @@ class BuyPassRequest(BaseModel):
 
 @app.post("/pass/buy")
 async def buy_pass(req: BuyPassRequest):
-    """
-    Buys a bundle of `rides` ride-credits for a specific company,
-    at NPR 20/ride, deducted from wallet. Only usable on that company's buses.
-    """
     if req.rides <= 0:
         return {"success": False, "message": "Invalid ride count"}
 
     cost = req.rides * PRICE_PER_RIDE
-    balance = wallets.get(req.device_id, 0.0)
+    db = SessionLocal()
+
+    wallet = db.query(Wallet).filter(Wallet.device_id == req.device_id).first()
+    balance = wallet.balance if wallet else 0.0
 
     if balance < cost:
+        db.close()
         return {
             "success": False,
             "message": "Insufficient wallet balance",
@@ -327,21 +429,43 @@ async def buy_pass(req: BuyPassRequest):
             "cost": cost,
         }
 
-    wallets[req.device_id] = balance - cost
-    company_passes = ride_passes.setdefault(req.device_id, {})
-    company_passes[req.company] = company_passes.get(req.company, 0) + req.rides
+    if wallet:
+        wallet.balance -= cost
+    else:
+        wallet = Wallet(device_id=req.device_id, balance=-cost)
+        db.add(wallet)
+
+    existing_pass = (
+        db.query(RidePass)
+        .filter(RidePass.device_id == req.device_id, RidePass.company == req.company)
+        .first()
+    )
+    if existing_pass:
+        existing_pass.rides_remaining += req.rides
+        rides_remaining = existing_pass.rides_remaining
+    else:
+        new_pass = RidePass(device_id=req.device_id, company=req.company, rides_remaining=req.rides)
+        db.add(new_pass)
+        rides_remaining = req.rides
+
+    db.commit()
+    new_balance = wallet.balance
+    db.close()
 
     return {
         "success": True,
         "message": f"Pass purchased: {req.rides} rides for {req.company}",
-        "rides_remaining": company_passes[req.company],
-        "wallet_balance": wallets[req.device_id],
+        "rides_remaining": rides_remaining,
+        "wallet_balance": new_balance,
     }
 
 
 @app.get("/pass/{device_id}")
 async def get_passes(device_id: str):
-    return {"passes": ride_passes.get(device_id, {})}
+    db = SessionLocal()
+    passes = db.query(RidePass).filter(RidePass.device_id == device_id).all()
+    db.close()
+    return {"passes": {p.company: p.rides_remaining for p in passes}}
 
 
 # ---- eSewa payment integration (UAT/sandbox — kept for reference, not currently used) ----
@@ -351,16 +475,12 @@ ESEWA_PRODUCT_CODE = "EPAYTEST"
 ESEWA_FORM_URL = "https://rc-epay.esewa.com.np/api/epay/main/v2/form"
 ESEWA_STATUS_URL = "https://rc.esewa.com.np/api/epay/transaction/status/"
 
-BASE_URL = "https://busam.onrender.com"  # your deployed backend
+BASE_URL = "https://busam.onrender.com"
 
-# tracks transaction_uuid -> device_id, so /pay/success knows whose wallet to credit
 pending_payments: dict[str, str] = {}
 
 
 def generate_signature(total_amount: str, transaction_uuid: str, product_code: str) -> str:
-    """
-    eSewa requires HMAC-SHA256 signature over specific fields, in this exact order.
-    """
     message = f"total_amount={total_amount},transaction_uuid={transaction_uuid},product_code={product_code}"
     hmac_obj = hmac.new(
         ESEWA_SECRET_KEY.encode("utf-8"),
@@ -372,17 +492,10 @@ def generate_signature(total_amount: str, transaction_uuid: str, product_code: s
 
 @app.get("/pay/initiate")
 async def initiate_payment(amount: float, device_id: str):
-    """
-    Called by the Flutter app before opening the WebView.
-    Returns an HTML page with a pre-filled form that auto-submits
-    to eSewa (ePay v2 flow expects an HTML form POST, not raw JSON).
-    """
     transaction_uuid = str(uuid.uuid4())
     total_amount = str(amount)
 
     signature = generate_signature(total_amount, transaction_uuid, ESEWA_PRODUCT_CODE)
-
-    # remember which device_id this transaction belongs to
     pending_payments[transaction_uuid] = device_id
 
     success_url = f"{BASE_URL}/pay/success"
@@ -412,10 +525,6 @@ async def initiate_payment(amount: float, device_id: str):
 
 @app.get("/pay/success")
 async def payment_success(data: str):
-    """
-    eSewa redirects here after payment, with a base64-encoded 'data' query param.
-    We MUST verify with eSewa's server directly - never trust this redirect alone.
-    """
     decoded = json.loads(base64.b64decode(data).decode("utf-8"))
     transaction_uuid = decoded.get("transaction_uuid")
     total_amount = decoded.get("total_amount")
@@ -434,7 +543,15 @@ async def payment_success(data: str):
     if status_data.get("status") == "COMPLETE":
         device_id = pending_payments.pop(transaction_uuid, None)
         if device_id:
-            wallets[device_id] = wallets.get(device_id, 0.0) + float(total_amount)
+            db = SessionLocal()
+            wallet = db.query(Wallet).filter(Wallet.device_id == device_id).first()
+            if wallet:
+                wallet.balance += float(total_amount)
+            else:
+                wallet = Wallet(device_id=device_id, balance=float(total_amount))
+                db.add(wallet)
+            db.commit()
+            db.close()
         return HTMLResponse("<h2>Payment verified! You can close this window.</h2>")
     else:
         return HTMLResponse(f"<h2>Payment not verified: {status_data}</h2>")
@@ -446,8 +563,6 @@ async def payment_failure():
 
 
 # ---- Mock payment simulator (reliable stand-in for the demo) ----
-# Simulates a real payment gateway flow (WebView -> confirm -> wallet credited)
-# without depending on third-party sandbox infrastructure.
 
 @app.get("/pay/mock/initiate")
 async def mock_pay_initiate(amount: float, device_id: str):
@@ -472,11 +587,24 @@ async def mock_pay_initiate(amount: float, device_id: str):
 
 @app.post("/pay/mock/confirm")
 async def mock_pay_confirm(device_id: str = Form(...), amount: float = Form(...)):
-    wallets[device_id] = wallets.get(device_id, 0.0) + amount
+    db = SessionLocal()
+    wallet = db.query(Wallet).filter(Wallet.device_id == device_id).first()
+    if wallet:
+        wallet.balance += amount
+    else:
+        wallet = Wallet(device_id=device_id, balance=amount)
+        db.add(wallet)
+    db.commit()
+    new_balance = wallet.balance
+    db.close()
+
     return HTMLResponse(
         f"<h2>Payment successful! NPR {amount} added.</h2>"
-        f"<p>New balance: NPR {wallets[device_id]}</p>"
+        f"<p>New balance: NPR {new_balance}</p>"
     )
+
+
+# ---- Signup / OTP / Login ----
 
 class SignupRequest(BaseModel):
     name: str
@@ -570,20 +698,19 @@ async def login(req: LoginRequest):
             "email": user.email,
         },
     }
-    from datetime import date
 
-# device_id -> {"status": "pending"/"approved"/"rejected", "expiry_date": "YYYY-MM-DD" or None, "image_base64": str}
-student_verifications: dict[str, dict] = {}
 
+# ---- Student ID verification ----
 
 def is_student_verified(device_id: str) -> bool:
-    record = student_verifications.get(device_id)
-    if not record or record.get("status") != "approved":
+    db = SessionLocal()
+    record = db.query(StudentVerification).filter(
+        StudentVerification.device_id == device_id
+    ).first()
+    db.close()
+    if not record or record.status != "approved" or not record.expiry_date:
         return False
-    expiry = record.get("expiry_date")
-    if not expiry:
-        return False
-    return date.fromisoformat(expiry) >= date.today()
+    return date.fromisoformat(record.expiry_date) >= date.today()
 
 
 class SubmitIdRequest(BaseModel):
@@ -593,49 +720,73 @@ class SubmitIdRequest(BaseModel):
 
 @app.post("/student-id/submit")
 async def submit_student_id(req: SubmitIdRequest):
-    student_verifications[req.device_id] = {
-        "status": "pending",
-        "expiry_date": None,
-        "image_base64": req.image_base64,
-    }
+    db = SessionLocal()
+    record = db.query(StudentVerification).filter(
+        StudentVerification.device_id == req.device_id
+    ).first()
+    if record:
+        record.status = "pending"
+        record.image_base64 = req.image_base64
+        record.expiry_date = None
+    else:
+        record = StudentVerification(
+            device_id=req.device_id, status="pending", image_base64=req.image_base64
+        )
+        db.add(record)
+    db.commit()
+    db.close()
     return {"success": True, "message": "ID submitted, pending review."}
 
 
 @app.get("/student-id/status/{device_id}")
 async def get_student_id_status(device_id: str):
-    record = student_verifications.get(device_id)
+    db = SessionLocal()
+    record = db.query(StudentVerification).filter(
+        StudentVerification.device_id == device_id
+    ).first()
+    db.close()
     if not record:
         return {"status": "none"}
-    return {
-        "status": record["status"],
-        "expiry_date": record.get("expiry_date"),
-        "verified": is_student_verified(device_id),
-    }
+    verified = (
+        record.status == "approved"
+        and record.expiry_date
+        and date.fromisoformat(record.expiry_date) >= date.today()
+    )
+    return {"status": record.status, "expiry_date": record.expiry_date, "verified": verified}
 
 
 @app.get("/admin/student-id/pending")
 async def list_pending_student_ids():
-    """Returns all submissions currently awaiting review."""
-    pending = {
-        device_id: record
-        for device_id, record in student_verifications.items()
-        if record["status"] == "pending"
+    db = SessionLocal()
+    records = db.query(StudentVerification).filter(
+        StudentVerification.status == "pending"
+    ).all()
+    db.close()
+    return {
+        "pending": {
+            r.device_id: {"image_base64": r.image_base64} for r in records
+        }
     }
-    return {"pending": pending}
 
 
 class ApproveIdRequest(BaseModel):
     device_id: str
-    expiry_date: str  # "YYYY-MM-DD"
+    expiry_date: str
 
 
 @app.post("/admin/student-id/approve")
 async def approve_student_id(req: ApproveIdRequest):
-    record = student_verifications.get(req.device_id)
+    db = SessionLocal()
+    record = db.query(StudentVerification).filter(
+        StudentVerification.device_id == req.device_id
+    ).first()
     if not record:
+        db.close()
         return {"success": False, "message": "No submission found"}
-    record["status"] = "approved"
-    record["expiry_date"] = req.expiry_date
+    record.status = "approved"
+    record.expiry_date = req.expiry_date
+    db.commit()
+    db.close()
     return {"success": True, "message": "Approved"}
 
 
@@ -645,8 +796,14 @@ class RejectIdRequest(BaseModel):
 
 @app.post("/admin/student-id/reject")
 async def reject_student_id(req: RejectIdRequest):
-    record = student_verifications.get(req.device_id)
+    db = SessionLocal()
+    record = db.query(StudentVerification).filter(
+        StudentVerification.device_id == req.device_id
+    ).first()
     if not record:
+        db.close()
         return {"success": False, "message": "No submission found"}
-    record["status"] = "rejected"
+    record.status = "rejected"
+    db.commit()
+    db.close()
     return {"success": True, "message": "Rejected"}
