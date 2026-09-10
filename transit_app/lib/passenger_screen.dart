@@ -2,90 +2,20 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
+import 'routes_data.dart';
 import 'qr_scan_screen.dart';
 import 'device_id.dart';
 import 'load_money_screen.dart';
 import 'pass_company_screen.dart';
 import 'profile_screen.dart';
 import 'student_id_screen.dart';
-
-//2. class for the Busroute validation
-class BusRoute {
-  final String id;
-  final String company;
-  final String label;
-  final List<String> stops;
-  BusRoute({
-    required this.id,
-    required this.company,
-    required this.label,
-    required this.stops,
-  });
-}
-
-//3. allRoutes variable contain list of all the BusRoute object only
-final List<BusRoute> allRoutes = [
-  BusRoute(
-    id: 'mayuri_jamal',
-    company: 'Mayuri',
-    label: 'Kalanki → Jamal (via Lainchaur)',
-    stops: [
-      'Kalanki',
-      'Banasthali',
-      'Balaju',
-      'Sorhakhutte',
-      'Lainchaur',
-      'Jamal',
-    ],
-  ),
-  BusRoute(
-    id: 'mayuri_baudha',
-    company: 'Mayuri',
-    label: 'Kalanki → Baudha (via Chabahil)',
-    stops: [
-      'Kalanki',
-      'Banasthali',
-      'Balaju',
-      'Samakhusi',
-      'Chabahil',
-      'Baudha',
-    ],
-  ),
-  BusRoute(
-    id: 'sajha_koteshwor',
-    company: 'Sajha',
-    label: 'Ratnapark → Koteshwor',
-    stops: ['Ratnapark', 'Baneshwor', 'Koteshwor'],
-  ),
-];
-
-//4. allStopNames function which contains only List of string
-List<String> allStopNames() {
-  final set = <String>{};
-  for (final r in allRoutes) {
-    set.addAll(r.stops);
-  }
-  return set.toList()..sort();
-}
-
-//5.To search starting and ending point of trip and see if its available or not
-List<BusRoute> searchRoutes(String from, String to) {
-  return allRoutes.where((route) {
-    final fromIndex = route.stops.indexWhere(
-      (s) => s.toLowerCase() == from.toLowerCase(),
-    );
-    final toIndex = route.stops.indexWhere(
-      (s) => s.toLowerCase() == to.toLowerCase(),
-    );
-    return fromIndex != -1 && toIndex != -1 && fromIndex < toIndex;
-  }).toList();
-}
 
 //6.Createstate is a function that returns a PassengerScreenState class
 class PassengerScreen extends StatefulWidget {
@@ -112,6 +42,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
 
   String? _activeRouteId;
   bool _driverOnline = false;
+  double _speedKmh = 0.0;
 
   int _navIndex = 0; // 0 = Home
 
@@ -165,10 +96,12 @@ class _PassengerScreenState extends State<PassengerScreen> {
         final lng = decoded['lng'];
         final routeId = decoded['route_id'];
         final driverOnline = decoded['driver_online'] ?? false;
+        final speedKmh = (decoded['speed_kmh'] ?? 0.0).toDouble();
 
         setState(() {
           _driverOnline = driverOnline;
           _activeRouteId = routeId;
+          _speedKmh = speedKmh;
           if (lat != null && lng != null) {
             _busLocation = LatLng(lat, lng);
             _status = 'Live';
@@ -233,6 +166,36 @@ class _PassengerScreenState extends State<PassengerScreen> {
     setState(() {
       _searchResults = liveMatches;
     });
+  }
+
+  // ---- ETA helpers ----
+  // Straight-line distance between two GPS points, in kilometers (haversine formula)
+  double _haversineKm(LatLng a, LatLng b) {
+    const R = 6371.0;
+    final dLat = (b.latitude - a.latitude) * (math.pi / 180);
+    final dLng = (b.longitude - a.longitude) * (math.pi / 180);
+    final lat1 = a.latitude * (math.pi / 180);
+    final lat2 = b.latitude * (math.pi / 180);
+    final h =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1) *
+            math.cos(lat2) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return R * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
+  }
+
+  // Estimated time for the live bus to reach the given stop, based on current speed
+  String? _etaText(String stopName) {
+    if (_busLocation == null) return null;
+    final stopCoord = stopCoordinatesFor(stopName);
+    if (stopCoord == null) return null;
+        if (_speedKmh < 1) {
+      return 'Bus not moving';
+    }
+    final distKm = _haversineKm(_busLocation!, stopCoord);
+    final minutes = (distKm / _speedKmh) * 60;
+    return '~${minutes.round()} min away';
   }
 
   @override
@@ -441,6 +404,7 @@ class _PassengerScreenState extends State<PassengerScreen> {
                           child: Text('No buses found for this route'),
                         )
                       else
+                        //Basically bus icon with route a->b->c->
                         ..._searchResults!.map(
                           (r) => ListTile(
                             dense: true,
@@ -449,7 +413,14 @@ class _PassengerScreenState extends State<PassengerScreen> {
                               color: Colors.green,
                             ),
                             title: Text(r.label),
-                            subtitle: Text(r.stops.join(' → ')),
+                            subtitle: Text(
+                              _fromStop != null && _etaText(_fromStop!) != null
+                                  ? '${r.stops.map((s) => s.name).join(' → ')}\n${_etaText(_fromStop!)}'
+                                  : r.stops.map((s) => s.name).join(' → '),
+                            ),
+                            isThreeLine:
+                                _fromStop != null &&
+                                _etaText(_fromStop!) != null,
                           ),
                         ),
 

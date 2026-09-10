@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="BusAwu Component Diagram" id="busawu-component-diagram">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="880" pageHeight="820" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+    <mxCell id="cd1" value="1. Client Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;fontStyle=1;fontSize=13;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="40" y="40" width="760" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="cd2" value="2. Communication Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;fontStyle=1;fontSize=13;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="40" y="210" width="760" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="cd3" value="3. Application Services" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;fontStyle=1;fontSize=13;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="40" y="380" width="760" height="110" as="geometry" />
+    </mxCell>
+    <mxCell id="cd4" value="4. Data Access" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;fontStyle=1;fontSize=13;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="40" y="550" width="760" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="cd5" value="5. Data Storage" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;align=left;fontStyle=1;fontSize=13;spacingLeft=8;spacingTop=6;" vertex="1" parent="1">
+      <mxGeometry x="40" y="700" width="760" height="90" as="geometry" />
+    </mxCell>
+    <mxCell id="cd6" value="Driver App
+(Flutter / Dart)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="140" y="80" width="220" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd7" value="Passenger App
+(Flutter / Dart)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="480" y="80" width="220" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd8" value="WebSocket Relay
+/ws/driver, /ws/passenger" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="140" y="250" width="260" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd9" value="HTTP API
+/qr/scan, /wallet/*" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="480" y="250" width="220" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd10" value="Route Matching
+Service" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="100" y="420" width="180" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd11" value="Fare Calculation
+Service" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="330" y="420" width="180" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd12" value="Wallet
+Service" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="560" y="420" width="180" height="50" as="geometry" />
+    </mxCell>
+    <mxCell id="cd13" value="SQLAlchemy ORM (Python)" style="shape=component;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;jettyWidth=8;jettyHeight=4;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="280" y="580" width="280" height="40" as="geometry" />
+    </mxCell>
+    <mxCell id="cd14" value="PostgreSQL Database (Render)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;boundedLbl=1;" vertex="1" parent="1">
+      <mxGeometry x="300" y="725" width="240" height="55" as="geometry" />
+    </mxCell>
+    <mxCell id="cd15" value="wss://" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd6" target="cd8">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd16" value="wss://" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd7" target="cd8">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd17" value="https://" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd7" target="cd9">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd8" target="cd10">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd19" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd9" target="cd11">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd9" target="cd12">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd10" target="cd13">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd11" target="cd13">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd12" target="cd13">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="cd13" target="cd14">
+      <mxGeometry relative="1" as="geometry" />
+    </mxCell>
+    <mxCell id="cd25" value="Render Web Service (FastAPI / Uvicorn) &#10;- Layers 2, 3, and 4 all run inside this single deployed backend process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;dashed=1;verticalAlign=bottom;align=center;fontStyle=2;fontSize=11;" vertex="1" parent="1">
+      <mxGeometry x="20" y="195" width="800" height="460" as="geometry" />
+    </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

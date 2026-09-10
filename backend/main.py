@@ -99,6 +99,13 @@ def haversine_km(lat1, lng1, lat2, lng2) -> float:
     return R * c
 
 
+# Speed tracking state
+previous_location = {"lat": None, "lng": None, "time": None}
+current_speed_kmh = 0.0
+speed_samples = []  # recent speed readings, for smoothing
+MAX_SPEED_SAMPLES = 20  # ~20 samples at 3-sec intervals ≈ 60 sec rolling window
+MIN_MOVEMENT_SPEED_KMH = 0.5  # readings below this are treated as "stopped", not counted in the average
+
 app = FastAPI()
 
 # Every passenger currently connected and listening for updates
@@ -111,20 +118,10 @@ latest_location = {"lat": None, "lng": None, "route_id": None}
 # Whether a driver is currently connected/broadcasting
 driver_online = False
 
-# ---- Speed tracking state ----
-previous_location = {"lat": None, "lng": None, "time": None}
-current_speed_kmh = 0.0
-speed_samples = []  # recent speed readings, for smoothing
-MAX_SPEED_SAMPLES = 5
-
 
 @app.websocket("/ws/driver")
 async def driver_socket(websocket: WebSocket):
-    """
-    The driver's phone connects here ONCE, then keeps sending
-    new locations (+ route_id) over this same open connection.
-    """
-    global driver_online, current_speed_kmh
+    global driver_online
     await websocket.accept()
     driver_online = True
     print("Driver connected")
@@ -132,29 +129,37 @@ async def driver_socket(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            location = json.loads(data)  # {"lat": ..., "lng": ..., "route_id": ...}
+            location = json.loads(data)
 
             new_lat = location.get("lat")
             new_lng = location.get("lng")
             now = time.time()
 
-            # ---- Speed calculation (smoothed rolling average) ----
+            # ---- Speed calculation ----
+            global current_speed_kmh
             if (
                 previous_location["lat"] is not None
                 and previous_location["time"] is not None
                 and new_lat is not None
             ):
                 time_elapsed = now - previous_location["time"]
-                if time_elapsed > 0.5:
+                if time_elapsed > 0.5:  # avoid divide-by-zero / noise on very fast repeats
                     dist = haversine_km(
                         previous_location["lat"], previous_location["lng"], new_lat, new_lng
                     )
                     instantaneous_speed = (dist / time_elapsed) * 3600  # km/h
 
-                    speed_samples.append(instantaneous_speed)
-                    if len(speed_samples) > MAX_SPEED_SAMPLES:
-                        speed_samples.pop(0)
-                    current_speed_kmh = sum(speed_samples) / len(speed_samples)
+                    # only count genuine movement in the rolling average —
+                    # this stops brief red-light/stop-sign pauses from dragging
+                    # the average toward 0 every single time
+                    if instantaneous_speed >= MIN_MOVEMENT_SPEED_KMH:
+                        speed_samples.append(instantaneous_speed)
+                        if len(speed_samples) > MAX_SPEED_SAMPLES:
+                            speed_samples.pop(0)
+
+                    current_speed_kmh = (
+                        sum(speed_samples) / len(speed_samples) if speed_samples else 0.0
+                    )
 
             previous_location["lat"] = new_lat
             previous_location["lng"] = new_lng

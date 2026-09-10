@@ -1,0 +1,92 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Passenger State Diagram" id="passenger_state_diagram">
+    <mxGraphModel dx="1471" dy="763" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="760" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="passenger_state_diagram_1" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=18;" value="" vertex="1">
+          <mxGeometry height="24" width="24" x="90" y="38" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="Idle" vertex="1">
+          <mxGeometry height="60" width="200" x="300" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="ViewingLiveMap" vertex="1">
+          <mxGeometry height="60" width="240" x="340" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="SearchingRoute" vertex="1">
+          <mxGeometry height="60" width="200" x="800" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="TripBoarded" vertex="1">
+          <mxGeometry height="60" width="240" x="50" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="TripCompleted" vertex="1">
+          <mxGeometry height="60" width="200" x="70" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=30;fontStyle=1;fontSize=18;" value="TripFailed" vertex="1">
+          <mxGeometry height="60" width="200" x="600" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_8" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=#000000;strokeColor=#000000;fontSize=18;" value="" vertex="1">
+          <mxGeometry height="16" width="16" x="862" y="666" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_9" parent="1" style="ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#000000;fontSize=18;" value="" vertex="1">
+          <mxGeometry height="28" width="28" x="856" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_10" edge="1" parent="1" source="passenger_state_diagram_1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;" target="passenger_state_diagram_2" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_11" edge="1" parent="1" source="passenger_state_diagram_2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_3" value="open app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_12" edge="1" parent="1" source="passenger_state_diagram_3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_4" value="enter From/To">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_13" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" value="matching bus shown">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="800" y="120.00000000000011" as="sourcePoint" />
+            <mxPoint x="490.0000000000002" y="159.9999999999999" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="passenger_state_diagram_14" edge="1" parent="1" source="passenger_state_diagram_3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_5" value="scan QR (BOARD)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_15" edge="1" parent="1" source="passenger_state_diagram_5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_6" value="scan QR (EXIT) - balance sufficient">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="passenger_state_diagram_16" edge="1" parent="1" source="passenger_state_diagram_5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_7" value="scan QR (EXIT) - balance insufficient">
+          <mxGeometry relative="1" x="0.2063" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="passenger_state_diagram_17" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" value="return home">
+          <mxGeometry relative="1" x="-0.6078" y="60" as="geometry">
+            <mxPoint as="offset" />
+            <mxPoint x="269.9999999999998" y="570.0000000000002" as="sourcePoint" />
+            <mxPoint x="430.0000000000002" y="219.9999999999999" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="passenger_state_diagram_18" edge="1" parent="1" source="passenger_state_diagram_7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_3" value="return home / top up wallet">
+          <mxGeometry relative="1" x="-0.8776" y="-60" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="passenger_state_diagram_19" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;labelBackgroundColor=#ffffff;" value="app closed">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="580" y="210" as="sourcePoint" />
+            <mxPoint x="870" y="660" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="passenger_state_diagram_20" edge="1" parent="1" source="passenger_state_diagram_5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;fontSize=18;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=1;entryY=0.75;entryDx=0;entryDy=0;labelBackgroundColor=#ffffff;" target="passenger_state_diagram_5" value="live map updates (driver location tick)">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580" y="355" />
+              <mxPoint x="580" y="385" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="C8uZBK_chnSSoXkKlwSN-2" edge="1" parent="1" source="passenger_state_diagram_7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;innerLoopWaypoints=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;fontSize=18;" target="passenger_state_diagram_7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
