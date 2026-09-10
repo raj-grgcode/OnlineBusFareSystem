@@ -5,8 +5,6 @@ from datetime import date
 import json
 import math
 import uuid as uuid_lib
-import hmac
-import hashlib
 import base64
 import uuid
 import httpx
@@ -473,98 +471,84 @@ async def get_passes(device_id: str):
     return {"passes": {p.company: p.rides_remaining for p in passes}}
 
 
-# ---- eSewa payment integration (UAT/sandbox — kept for reference, not currently used) ----
-
-ESEWA_SECRET_KEY = "8gBm/:&EnhH.1/q"
-ESEWA_PRODUCT_CODE = "EPAYTEST"
-ESEWA_FORM_URL = "https://rc-epay.esewa.com.np/api/epay/main/v2/form"
-ESEWA_STATUS_URL = "https://rc.esewa.com.np/api/epay/transaction/status/"
 
 BASE_URL = "https://busam.onrender.com"
+# ---- Khalti payment integration (KPG-2 Web Checkout, sandbox) ----
 
-pending_payments: dict[str, str] = {}
+KHALTI_SECRET_KEY = os.environ.get("KHALTI_SECRET_KEY")
+KHALTI_INITIATE_URL = "https://dev.khalti.com/api/v2/epayment/initiate/"
+KHALTI_LOOKUP_URL = "https://dev.khalti.com/api/v2/epayment/lookup/"
 
-
-def generate_signature(total_amount: str, transaction_uuid: str, product_code: str) -> str:
-    message = f"total_amount={total_amount},transaction_uuid={transaction_uuid},product_code={product_code}"
-    hmac_obj = hmac.new(
-        ESEWA_SECRET_KEY.encode("utf-8"),
-        message.encode("utf-8"),
-        hashlib.sha256,
-    )
-    return base64.b64encode(hmac_obj.digest()).decode("utf-8")
+pending_khalti_payments: dict[str, str] = {}  # pidx -> device_id
 
 
-@app.get("/pay/initiate")
-async def initiate_payment(amount: float, device_id: str):
-    transaction_uuid = str(uuid.uuid4())
-    total_amount = str(amount)
+@app.get("/khalti/initiate")
+async def khalti_initiate(amount: float, device_id: str):
+    purchase_order_id = str(uuid.uuid4())
 
-    signature = generate_signature(total_amount, transaction_uuid, ESEWA_PRODUCT_CODE)
-    pending_payments[transaction_uuid] = device_id
-
-    success_url = f"{BASE_URL}/pay/success"
-    failure_url = f"{BASE_URL}/pay/failure"
-
-    html = f"""
-    <html>
-    <body onload="document.forms[0].submit()">
-      <form action="{ESEWA_FORM_URL}" method="POST">
-        <input type="hidden" name="amount" value="{total_amount}">
-        <input type="hidden" name="tax_amount" value="0">
-        <input type="hidden" name="total_amount" value="{total_amount}">
-        <input type="hidden" name="transaction_uuid" value="{transaction_uuid}">
-        <input type="hidden" name="product_code" value="{ESEWA_PRODUCT_CODE}">
-        <input type="hidden" name="product_service_charge" value="0">
-        <input type="hidden" name="product_delivery_charge" value="0">
-        <input type="hidden" name="success_url" value="{success_url}">
-        <input type="hidden" name="failure_url" value="{failure_url}">
-        <input type="hidden" name="signed_field_names" value="total_amount,transaction_uuid,product_code">
-        <input type="hidden" name="signature" value="{signature}">
-      </form>
-    </body>
-    </html>
-    """
-    return HTMLResponse(content=html)
-
-
-@app.get("/pay/success")
-async def payment_success(data: str):
-    decoded = json.loads(base64.b64decode(data).decode("utf-8"))
-    transaction_uuid = decoded.get("transaction_uuid")
-    total_amount = decoded.get("total_amount")
+    payload = {
+        "return_url": f"{BASE_URL}/khalti/callback",
+        "website_url": BASE_URL,
+        "amount": int(amount * 100),  # Khalti expects paisa, not rupees
+        "purchase_order_id": purchase_order_id,
+        "purchase_order_name": "BusAm Wallet Load",
+        "customer_info": {
+            "name": "BusAm User",
+            "email": "user@busam.app",
+            "phone": "9800000000",
+        },
+    }
 
     async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            ESEWA_STATUS_URL,
-            params={
-                "product_code": ESEWA_PRODUCT_CODE,
-                "total_amount": total_amount,
-                "transaction_uuid": transaction_uuid,
+        resp = await client.post(
+            KHALTI_INITIATE_URL,
+            json=payload,
+            headers={
+                "Authorization": f"key {KHALTI_SECRET_KEY}",
+                "Content-Type": "application/json",
             },
         )
-        status_data = resp.json()
+        data = resp.json()
 
-    if status_data.get("status") == "COMPLETE":
-        device_id = pending_payments.pop(transaction_uuid, None)
+    if "pidx" not in data:
+        return {"success": False, "message": data}
+
+    pending_khalti_payments[data["pidx"]] = device_id
+
+    return {"success": True, "payment_url": data["payment_url"], "pidx": data["pidx"]}
+
+
+@app.get("/khalti/callback")
+async def khalti_callback(pidx: str):
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            KHALTI_LOOKUP_URL,
+            json={"pidx": pidx},
+            headers={
+                "Authorization": f"key {KHALTI_SECRET_KEY}",
+                "Content-Type": "application/json",
+            },
+        )
+        lookup_data = resp.json()
+
+    if lookup_data.get("status") == "Completed":
+        device_id = pending_khalti_payments.pop(pidx, None)
+        credited_amount = int(lookup_data.get("total_amount", 0)) / 100  # back to NPR
+
         if device_id:
             db = SessionLocal()
             wallet = db.query(Wallet).filter(Wallet.device_id == device_id).first()
             if wallet:
-                wallet.balance += float(total_amount)
+                wallet.balance += credited_amount
             else:
-                wallet = Wallet(device_id=device_id, balance=float(total_amount))
+                wallet = Wallet(device_id=device_id, balance=credited_amount)
                 db.add(wallet)
             db.commit()
             db.close()
+
         return HTMLResponse("<h2>Payment verified! You can close this window.</h2>")
     else:
-        return HTMLResponse(f"<h2>Payment not verified: {status_data}</h2>")
-
-
-@app.get("/pay/failure")
-async def payment_failure():
-    return HTMLResponse("<h2>Payment failed or cancelled.</h2>")
+        return HTMLResponse(f"<h2>Payment not verified: {lookup_data}</h2>")
 
 
 # ---- Mock payment simulator (reliable stand-in for the demo) ----
