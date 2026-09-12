@@ -796,3 +796,16 @@ async def reject_student_id(req: RejectIdRequest):
     db.commit()
     db.close()
     return {"success": True, "message": "Rejected"}
+
+@app.get("/admin/debug/all")
+async def debug_all():
+    db = SessionLocal()
+    users = db.query(User).all()
+    wallets = db.query(Wallet).all()
+    passes = db.query(RidePass).all()
+    db.close()
+    return {
+        "users": [{"name": u.name, "email": u.email, "phone": u.phone} for u in users],
+        "wallets": [{"device_id": w.device_id, "balance": w.balance} for w in wallets],
+        "ride_passes": [{"device_id": p.device_id, "company": p.company, "rides_remaining": p.rides_remaining} for p in passes],
+    }
